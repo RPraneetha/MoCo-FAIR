@@ -37,18 +37,16 @@ The MNIST Dataset consists of a total of 70,000 images of size 32 x 32 consistin
 
 ### EMNIST
 
-The E-MNIST or Extended MNIST dataset was used as an alternative large dataset for our experiments as we were unable to obtain the full sized ImageNet-1M and the Instagram-1B datasets due to resource constraints. The E-MNIST dataset builds upon the MNIST dataset and contains over 800,000 images split unevenly between 62 classes in its *by-class* split. We used the EMNIST dataset available as a part of PyTorch's torchvision package to try and reproduce the Momentum Contrastive Learning using Distributed processing on the multi-core TPU.
+The E-MNIST or Extended MNIST dataset was used as an alternative large dataset for our experiments as we were unable to obtain the full sized ImageNet-1M and the Instagram-1B datasets due to resource constraints. The E-MNIST dataset builds upon the MNIST dataset and contains over 800,000 images split unevenly between 62 classes in its **by-class** split. We used the EMNIST dataset available as a part of PyTorch's torchvision package to try and reproduce the Momentum Contrastive Learning using Distributed processing on the multi-core TPU.
 
 ## Architecture
 
-Consider an encoded query *q*a set of encoded samples {k_0, k_1, k_2, ...}. The MoCo network trains the network by comparing the query to a dictionary of encoded keys. It uses a contrastive loss function, which when given a positive sample belonging to  particular class, calculates its distance to another sample of the same class and compares it with a sample from a negative class. This differs from a traditional loss function where the comparison of a model's prediction is an absolute value. Contrastive learning is recently being used as a foundation in works on unsupervised learning. In the case of MoCo, contrastive learning essentially means that the loss function measures the similarity or dissimilarity of the query and the encoded keys, and attempts to maximize the similarity of the query to a matched key, say k_+. The formula for the contrastive loss function used is given by:
+Consider an encoded query **q** and a set of encoded samples { k<sub>0</sub>, k<sub>1</sub>, k<sub>2</sub>, ... }. The MoCo network trains the network by comparing the query to a dictionary of encoded keys. It uses a contrastive loss function, which when given a positive sample belonging to  particular class, calculates its distance to another sample of the same class and compares it with a sample from a negative class. This differs from a traditional loss function where the comparison of a model's prediction is an absolute value. Contrastive learning is recently being used as a foundation in works on unsupervised learning. In the case of MoCo, contrastive learning essentially means that the loss function measures the similarity or dissimilarity of the query and the encoded keys, and attempts to maximize the similarity of the query to a matched key, say k<sub>+</sub>. The formula for the contrastive loss function used is given by:
 
 ![Figure 2: Contrastive Loss Function](assets/contrastive_loss.png?raw=true)
 *Figure 2: Contrastive Loss Function*
 
-This loss function is a type of contrastive loss called InfoNCE, where *T* is a temperature hyper-parameter. The instantiations of the query samples depends on the type of pretext task. 
-
-*COMPARISON OF CONTRASTIVE LOSS*
+This loss function is a type of contrastive loss called InfoNCE, where **T** is a temperature hyper-parameter. The instantiations of the query samples depends on the type of pretext task. 
 
 The dictionary is dynamically built on-the-go by a set of data samples like patches or images. The dictionary is built in the form of a dynamic queue, in which the latest mini-batch is enqueued and the oldest mini-batch is dequeued. This way, the size of the dictionary is not dependent on the size of the mini-batch. The dictionary size itself could be independently set as a hyper-parameter. The dictionary keys are encoded by a slowly progressing encoder, which uses a momentum update from the query encoder. This ensures that the dictionary is both large and consistent. The representations learnt from this architecture can be transferred to a downstream tasks like object classification, segmentation, detection. The overhead of maintaining the state of the dictionary is negligible when compared to the benefits given by such an architecture.
 
@@ -95,10 +93,16 @@ for x in loader: # load a minibatch x with N samples
 ## Experiments
 
 ### Model Creation
+
 We attempted to reproduce the model and method described by the paper. We started out by implementing the algorithm as described in the previous section. Due to the lack of resources, specifically access to multiple-GPU environments, we performed our experiments in two different ways which are explained in the sub-sections below. We used a ResNet-50 architechture up to its penultimate global average pooling layer, replacing the fully connected layer with reduced dimensions to obtain the encoder. For the fully connected layer of the base architecure, the output is equal to our predetermined batch size(128), followed by a normalization of the output layer. The representation obtained here is used as the output of our encoder network. Both the query and key encoders use the same network and produce the same dimensional output.
 
 ### Random Image Augmentation
-As outlined by the paper, the images used undergo some random augmentations. This was achieved by using the functions readily available under the torchvision transforms package. We used `RandomResizedCrop`, `Random
+
+As outlined by the paper, the images used undergo some random augmentations. This was achieved by using the functions readily available under the torchvision transforms package. We used `RandomResizedCrop`, `ColorJitter`, `RandomApply(Grayscale)`, `RandomHorizontalFlip`, followed by a normalization, to obtain a random set of transformations which we applied while loading the dataset. The same transformed image was used as input to both the query and key encoders. For the `RandomResizedCrop` we had initially used a 224 x 224 crop for the ImageNet-mini dataset, but due to lack of resources we resorted to smaller sized datasets and reverted to a 32 x 32 crop instead.
+
+### Hyperparameters
+
+We ran our code with the following hyperparameters. The hyperparameters were selected based on the maximum values which could be executed using the limited resources without immediately running out of memory.
 
 | Hyperparameters           |        |
 |---------------------------|--------|
@@ -110,35 +114,24 @@ As outlined by the paper, the images used undergo some random augmentations. Thi
 | Learning Rate             | 0.03   |
 | Temperature               | 0.07   |
 
-```
-Technical details. We adopt a ResNet [33] as the encoder,
-whose last fully-connected layer (after global average pooling)
-has a fixed-dimensional output (128-D [61]). This output
-vector is normalized by its L2-norm [61]. This is the
-representation of the query or key. The temperature  in
-Eqn.(1) is set as 0.07 [61]. The data augmentation setting
-follows [61]: a 224224-pixel crop is taken from a randomly
-resized image, and then undergoes random color jittering,
-random horizontal flip, and random grayscale conversion,
-all available in PyTorch’s torchvision package.
-```
 
 ### Attempt with a Single GPU
+
+First we made an attempt to execute our code on a single GPU using Kaggle on the ImageNet-mini dataset. We conducted a test with a short run of 20 epochs to understand the effect of not using Shuffling Batch Normal. The results noticed are elaborated in the results section.
 
 ### Moving to TPU
 After the GPU proved to be an insufficient resource for the network, we attempted to run it with a TPU processor on Google Colab. This involved significantly changing our existing code to adapt to the multi-processing capabilities of the 8-core TPU. We observed a noticeable difference in the running time of the model as compared to the GPU, but we still could not get any tangible results. We used the ImageNet dataset with a 224x224 crop as recommended by the paper, but this caused the TPU to run out of memory instantly, even before 1 complete epoch could be run. We then moved to a 32x32 crop, with which we were able to run a few epochs but the TPU ultimately ran out of memory. 
 
 ## Challenges Faced
-Primary challenge: environment with multiple GPU
+
+### Environment with multiple GPUs
+The primary challenge we faced was with regards to the resources required to run the code. The paper used 8 Volta 32GB GPUs to run the ImageNet-1Million dataset to run the network with a batch-size of 1024. From Google Colab and Kaggle, we could ony get 1 8GB GPU which we used to run the same dataset but with a minimal batch-size of 128. If we use a lower batch size, the network will not get enough information to learn effectively. The resources required to completely reproduce this paper will not be available to a student.
+
 We tried working on a single GPU using Colab and Kaggle. But as defined in the paper(see Shuffling BN)
 batch norm leads to information leakage between batches(which we have seen in a result... Loss not changing after 5 epochs)
 
-Secondary challenge: Adapting the Shuffling code to adapt to TPU with 8 cores
-
-Lower support of Xla by torch compared to distributed GPU backend - torch distributed does not contain any support for "tpu" or "Xla" backend yet, and is also not part of their roadmap at this point. This leads to a number of integral functions such as "torch.distributed.broadcast" to be unavailable to be adapted for the tpu backend - Currently torch.distributed has support for, and recommends only "gloo"(for CPU), and "nccl"(GPU) backends for distributed processing of tensors
-
-Experiments: due to lower processing power, we made some changes to the suggested code from the paper. For instance, the transformation method using ImageNet for Resnet50, expects the image crops to be random crops of 224x224.   We had to use 32x32 to prevent our resources from running out of memory or terminating due to overuse
-We changed to a Resnet18 for EMNIST
+### Adapting the Shuffling code to adapt to TPU with 8 cores
+The TPU backend, which can be accessed through the `XLA` package in torch, has lower support as compared to a GPU backend, which is the default backend for ML tasks. Torch distributed does not contain any support for TPU or `XLA` backend yet, and is also not part of their roadmap at this point. This leads to a number of integral functions such as `torch.distributed.broadcast` to be unavailable to be adapted for the TPU backend. Currently `torch.distributed` has support for, and recommends only `gloo` for CPU, and `nccl` for GPU backends for distributed processing of tensors.
 
 ## Results
 

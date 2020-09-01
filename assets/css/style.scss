@@ -1,0 +1,29 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+em {
+    display: block;
+    text-align: center;
+}
+
+p img
+{
+    display: block !important;
+    float: none; 
+    margin: auto;
+    max-width: 640px;
+}
+
+sup {
+    font-size: 65%;
+    vertical-align: super;
+    font-weight: bold;
+}
+
+sub {
+    font-size: 65%;
+    vertical-align: sub;
+    font-weight: bold;
+}
